@@ -1,7 +1,10 @@
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/study?useUnicode=ture&characterEncoding=utf-8
+    username: root
+    password: 12345
 
-mybatis.mapper-locations=classpath:mappers/*xml
-
-mybatis.type-aliases-package=com.example.mybatis.entity
-
-server.port=8080
+server:
+  port: 8080
 
