@@ -4,7 +4,22 @@ spring:
     url: jdbc:mysql://127.0.0.1:3306/study?useUnicode=ture&characterEncoding=utf-8
     username: root
     password: 12345
-
+  mail:
+    host: smtp.163.com
+    username: 18321681788@163.com
+    password: JXZFKSDRSBVARCHU
+    port: 465
+    properties:
+      from: lingweiqi163@163.com
+      mail:
+        smtp:
+          socketFactory:
+            class: javax.net.ssl.SSLSocketFactory
+  data:
+    redis:
+      database: 0
+      host: localhost
+      port: 6379
 server:
   port: 8080
 
