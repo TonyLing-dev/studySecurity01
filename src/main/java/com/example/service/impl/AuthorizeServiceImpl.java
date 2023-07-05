@@ -4,6 +4,7 @@ import com.example.entity.Account;
 import com.example.mapper.UserMapper;
 import com.example.service.AuthorizeService;
 import jakarta.annotation.Resource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.mail.MailException;
@@ -12,6 +13,7 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.Random;
@@ -21,20 +23,21 @@ import java.util.concurrent.TimeUnit;
 public class AuthorizeServiceImpl implements AuthorizeService {
     @Value("${spring.mail.username}")
     String from;
-
+    @Autowired
+    StringRedisTemplate redisTemplate;
     @Resource
-    StringRedisTemplate template;
-
-    @Resource
-    UserMapper mapper;
+    UserMapper userMapper;
     @Resource
     MailSender mailSender;
+
+    BCryptPasswordEncoder pwdEncoder = new BCryptPasswordEncoder();
+
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         if (username == null){
             throw new UsernameNotFoundException("用户名不能为空");
         }
-        Account account = mapper.findAccountByNameOrEmail(username);
+        Account account = userMapper.findAccountByNameOrEmail(username);
         if (account == null){
             throw new UsernameNotFoundException("用户名或密码错误");
         }
@@ -52,16 +55,18 @@ public class AuthorizeServiceImpl implements AuthorizeService {
      * 5. 用户在注册时，再从Redis里面取出对应的键值对，然后看验证码是否一致
      */
     @Override
-    public boolean sendValidateEmail(String email, String sessionId) {
-        String key = "email:" +sessionId+":"+email;
+    public String sendValidateEmail(String email, String ip) {
+        String key = "email:" +ip+":"+email;
 
         // 如果过期剩余时间大于120秒，则不允许再申请验证码
-        if (Boolean.TRUE.equals(template.hasKey(key))){
-            Long expire = template.getExpire(key, TimeUnit.SECONDS);
-            if (expire > 120){
-                return false;
-            }
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(key))){
+            Long expire = redisTemplate.getExpire(key, TimeUnit.SECONDS);
+            if (expire > 120)
+                return "请求频繁，请稍后再试";
         }
+        // 如果邮箱已经被注册过，不能再发送
+        if (userMapper.findAccountByNameOrEmail(email) != null)
+            return "此邮箱已被其他人注册";
         // 否则可以再次申请
         Random random = new Random();
         int code = random.nextInt(899999) + 100000;
@@ -72,12 +77,30 @@ public class AuthorizeServiceImpl implements AuthorizeService {
         message.setText("验证码是："+ code);
         try {
             mailSender.send(message);
-            template.opsForValue().set(key, String.valueOf(code), 3, TimeUnit.MINUTES);
-            return true;
+            redisTemplate.opsForValue().set(key, String.valueOf(code), 3, TimeUnit.MINUTES);
+            return null;
         }catch (MailException e){
             System.out.println("发送失败");
             e.printStackTrace();
         }
-        return false;
+        return "邮件发送失败，请检查邮件地址是否有效";
+    }
+
+    @Override
+    public String validateAdnRegister(String username, String password, String email, String code, String ip) {
+        String key = "email:" +ip+":"+email;
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(key))){
+            String value = redisTemplate.opsForValue().get(key);
+            if (value == null) return "验证码失效，请重新请求";
+            if (value.equals(code)){
+                password = pwdEncoder.encode(password);
+                if(userMapper.createAccount(username, password, email)>0)   return null;
+                else return "内部错误，请联系管理员";
+            }else{
+                return "验证码错误";
+            }
+        }else{
+            return "请先请求验证码";
+        }
     }
 }
