@@ -55,8 +55,8 @@ public class AuthorizeServiceImpl implements AuthorizeService {
      * 5. 用户在注册时，再从Redis里面取出对应的键值对，然后看验证码是否一致
      */
     @Override
-    public String sendValidateEmail(String email, String ip) {
-        String key = "email:" +ip+":"+email;
+    public String sendValidateEmail(String email, String sessionId, boolean hasAccount) {
+        String key = "email:" +sessionId+":"+email+":"+ hasAccount;
 
         // 如果过期剩余时间大于120秒，则不允许再申请验证码
         if (Boolean.TRUE.equals(redisTemplate.hasKey(key))){
@@ -64,10 +64,11 @@ public class AuthorizeServiceImpl implements AuthorizeService {
             if (expire > 120)
                 return "请求频繁，请稍后再试";
         }
-        // 如果邮箱已经被注册过，不能再发送
-        if (userMapper.findAccountByNameOrEmail(email) != null)
-            return "此邮箱已被其他人注册";
-        // 否则可以再次申请
+
+        Account account = userMapper.findAccountByNameOrEmail(email);
+        if (hasAccount && account ==null)   return "没有此邮件地址的账户";
+        if (!hasAccount && account != null) return "此邮箱已被其他人注册";
+
         Random random = new Random();
         int code = random.nextInt(899999) + 100000;
         SimpleMailMessage message = new SimpleMailMessage();
@@ -87,12 +88,15 @@ public class AuthorizeServiceImpl implements AuthorizeService {
     }
 
     @Override
-    public String validateAdnRegister(String username, String password, String email, String code, String ip) {
-        String key = "email:" +ip+":"+email;
+    public String validateAdnRegister(String username, String password, String email, String code, String sessionId) {
+        String key = "email:" +sessionId+":"+email+":false";
         if (Boolean.TRUE.equals(redisTemplate.hasKey(key))){
             String value = redisTemplate.opsForValue().get(key);
             if (value == null) return "验证码失效，请重新请求";
             if (value.equals(code)){
+                Account account = userMapper.findAccountByNameOrEmail(email);
+                if (account != null) return "此用户/邮箱已被注册，请更换";
+                redisTemplate.delete(key);
                 password = pwdEncoder.encode(password);
                 if(userMapper.createAccount(username, password, email)>0)   return null;
                 else return "内部错误，请联系管理员";
@@ -102,5 +106,45 @@ public class AuthorizeServiceImpl implements AuthorizeService {
         }else{
             return "请先请求验证码";
         }
+    }
+
+    @Override
+    public String validateOnly(String email, String code, String sessionId) {
+        String key = "email:" +sessionId+":"+email+":true";
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(key))){
+            String value = redisTemplate.opsForValue().get(key);
+            if (value == null) return "验证码失效，请重新请求";
+            if (value.equals(code)){
+                redisTemplate.delete(key);
+                return null;
+            }else{
+                return "验证码错误";
+            }
+        }else{
+            return "请先请求验证码";
+        }
+    }
+
+    @Override
+    public String resetPassword(String email, String code, String password, String sessionId) {
+        String key = "email:" +sessionId+":"+email+":true";
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(key))){
+            String value = redisTemplate.opsForValue().get(key);
+            if (value == null) return "验证码失效，请重新请求";
+            if (value.equals(code)){
+                redisTemplate.delete(key);
+                Account account = userMapper.findAccountByNameOrEmail(email);
+                if (account != null){
+                    password = pwdEncoder.encode(password);
+                    if(userMapper.resetPasswordByEmail(password, email)>0) return null;
+                    else return "内部错误，请联系管理员";
+                }
+            }else{
+                return "验证码错误";
+            }
+        }else{
+            return "请先请求验证码";
+        }
+        return null;
     }
 }

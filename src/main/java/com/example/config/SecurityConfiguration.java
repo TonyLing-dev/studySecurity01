@@ -85,16 +85,6 @@ public class SecurityConfiguration {
         return source;
     }
 
-/*
-    @Bean
-    public AuthenticationManager authenticationManager(HttpSecurity security) throws Exception{
-        return security
-                .getSharedObject(AuthenticationManagerBuilder.class)
-                .userDetailsService(authorizeService)
-                .and()
-                .build();
-    }*/
-
     @Bean
     public BCryptPasswordEncoder passwordEncoder(){
         return new BCryptPasswordEncoder();
